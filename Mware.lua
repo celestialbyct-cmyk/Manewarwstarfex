@@ -1,24 +1,31 @@
---// Starfex Hub | RightShift - открыть/закрыть меню
---// ЛКМ по функции - вкл/выкл | ПКМ - настройки (Speed) | СКМ (колёсико) - назначить бинд
+--// Starfex Hub v2 | RightShift - открыть/закрыть меню
+--// ЛКМ по функции - вкл/выкл | ПКМ - настройки | СКМ (колёсико) - назначить бинд
 
 local Players = game:GetService("Players")
 local UIS = game:GetService("UserInputService")
 local RunService = game:GetService("RunService")
 local TweenService = game:GetService("TweenService")
+local VIM = game:GetService("VirtualInputManager")
 
 local lp = Players.LocalPlayer
 local cam = workspace.CurrentCamera
 
 local parentGui = (gethui and gethui()) or game:GetService("CoreGui")
 if parentGui:FindFirstChild("StarfexHub") then parentGui.StarfexHub:Destroy() end
+pcall(function() RunService:UnbindFromRenderStep("StarfexAim") end)
 
 local ACCENT = Color3.fromRGB(130, 90, 255)
 local BG = Color3.fromRGB(20, 20, 28)
 local ROW = Color3.fromRGB(32, 32, 44)
+local PANEL = Color3.fromRGB(26, 26, 36)
 local OFF = Color3.fromRGB(70, 70, 88)
+local GREY = Color3.fromRGB(150, 150, 170)
+
+local BLOCK = 4          -- 1 "блок" = 4 стада (поменяй если нужно)
+local TRIG_RANGE = 20    -- макс. дистанция для triggerbot (в стадах)
 
 ----------------------------------------------------------------
--- Состояние
+-- Состояние и настройки
 ----------------------------------------------------------------
 local state = {
     airstuck = { on = false, bind = nil },
@@ -26,33 +33,59 @@ local state = {
     esphp    = { on = false, bind = nil },
     espname  = { on = false, bind = nil },
     speed    = { on = false, bind = nil },
+    trigger  = { on = false, bind = nil },
+    aim      = { on = false, bind = nil },
 }
-local speedValue = 16
-local ui = {} -- ui[key] = {pill=, bindLabel=}
+local cfg = {
+    speed = 16,
+    crits = false,
+    useCooldown = true,
+    cooldown = 1,
+    smooth = 1,
+    range = 3,
+}
+local ui = {}
+
+local function getChar() return lp.Character end
+local function getHRP() return lp.Character and lp.Character:FindFirstChild("HumanoidRootPart") end
+local function getHum() return lp.Character and lp.Character:FindFirstChildOfClass("Humanoid") end
 
 ----------------------------------------------------------------
--- Airstuck
+-- Airstuck (позиция закрепляется каждый физ. шаг, скорость сохраняется)
 ----------------------------------------------------------------
-local savedVel
-local function getHRP()
-    return lp.Character and lp.Character:FindFirstChild("HumanoidRootPart")
-end
+local pinCF, savedVel, savedAng
 
 local function applyAirstuck(on)
     local hrp = getHRP()
     if on then
         if not hrp then return false end
+        pinCF = hrp.CFrame
         savedVel = hrp.AssemblyLinearVelocity
-        hrp.Anchored = true
+        savedAng = hrp.AssemblyAngularVelocity
+        return true
     else
         if hrp then
-            hrp.Anchored = false
-            if savedVel then hrp.AssemblyLinearVelocity = savedVel end
+            hrp.AssemblyLinearVelocity = savedVel or Vector3.zero
+            hrp.AssemblyAngularVelocity = savedAng or Vector3.zero
         end
-        savedVel = nil
+        pinCF, savedVel, savedAng = nil, nil, nil
+        return true
     end
-    return true
 end
+
+local function pin()
+    if state.airstuck.on and pinCF then
+        local hrp = getHRP()
+        if hrp then
+            hrp.CFrame = pinCF
+            hrp.AssemblyLinearVelocity = Vector3.zero
+            hrp.AssemblyAngularVelocity = Vector3.zero
+        end
+    end
+end
+RunService.Stepped:Connect(pin)
+RunService.Heartbeat:Connect(pin)
+RunService.RenderStepped:Connect(pin)
 
 ----------------------------------------------------------------
 -- Переключение функций
@@ -72,24 +105,27 @@ local function setFeature(key, value)
 end
 
 lp.CharacterAdded:Connect(function()
-    savedVel = nil
-    state.airstuck.on = false
-    if ui.airstuck then
-        ui.airstuck.pill.BackgroundColor3 = OFF
-        ui.airstuck.pill.Text = "OFF"
-    end
+    pinCF, savedVel, savedAng = nil, nil, nil
+    if state.airstuck.on then setFeature("airstuck", false) end
 end)
 
 ----------------------------------------------------------------
--- Speed
+-- Speed (WalkSpeed + принудительная скорость, если игра сбрасывает WalkSpeed)
 ----------------------------------------------------------------
 local speedWasOn = false
 RunService.Heartbeat:Connect(function()
-    local hum = lp.Character and lp.Character:FindFirstChildOfClass("Humanoid")
-    if not hum then return end
+    local hum, hrp = getHum(), getHRP()
+    if not (hum and hrp) then return end
     if state.speed.on then
-        hum.WalkSpeed = speedValue
         speedWasOn = true
+        hum.WalkSpeed = cfg.speed
+        if not state.airstuck.on then
+            local md = hum.MoveDirection
+            if md.Magnitude > 0 then
+                local v = hrp.AssemblyLinearVelocity
+                hrp.AssemblyLinearVelocity = Vector3.new(md.X * cfg.speed, v.Y, md.Z * cfg.speed)
+            end
+        end
     elseif speedWasOn then
         hum.WalkSpeed = 16
         speedWasOn = false
@@ -107,9 +143,9 @@ if syn and syn.protect_gui then pcall(syn.protect_gui, gui) end
 gui.Parent = parentGui
 
 local main = Instance.new("Frame")
-main.Size = UDim2.fromOffset(300, 0)
+main.Size = UDim2.fromOffset(310, 0)
 main.AutomaticSize = Enum.AutomaticSize.Y
-main.Position = UDim2.new(0.5, -150, 0.5, -170)
+main.Position = UDim2.new(0.5, -155, 0.5, -200)
 main.BackgroundColor3 = BG
 main.BorderSizePixel = 0
 main.Parent = gui
@@ -127,7 +163,6 @@ local list = Instance.new("UIListLayout", main)
 list.Padding = UDim.new(0, 6)
 list.SortOrder = Enum.SortOrder.LayoutOrder
 
--- Заголовок (перетаскивание)
 local title = Instance.new("TextLabel")
 title.LayoutOrder = 0
 title.Size = UDim2.new(1, 0, 0, 30)
@@ -143,7 +178,7 @@ sub.LayoutOrder = 1
 sub.Size = UDim2.new(1, 0, 0, 14)
 sub.BackgroundTransparency = 1
 sub.Text = "ЛКМ - вкл/выкл  •  ПКМ - настройки  •  СКМ - бинд"
-sub.TextColor3 = Color3.fromRGB(150, 150, 170)
+sub.TextColor3 = GREY
 sub.Font = Enum.Font.Gotham
 sub.TextSize = 11
 sub.Parent = main
@@ -168,7 +203,6 @@ do
     end)
 end
 
--- Бинды
 local listeningKey
 local function bindText(k)
     return state[k].bind and ("[" .. state[k].bind.Name .. "]") or "[—]"
@@ -200,7 +234,7 @@ local function makeRow(order, key, label, onRight)
     bindLabel.Position = UDim2.new(0.5, 0, 0, 0)
     bindLabel.Size = UDim2.new(0.25, 0, 1, 0)
     bindLabel.Text = "[—]"
-    bindLabel.TextColor3 = Color3.fromRGB(150, 150, 170)
+    bindLabel.TextColor3 = GREY
     bindLabel.Font = Enum.Font.Gotham
     bindLabel.TextSize = 12
     bindLabel.Parent = row
@@ -228,93 +262,86 @@ local function makeRow(order, key, label, onRight)
             bindLabel.TextColor3 = ACCENT
         end
     end)
-    return row
 end
 
--- Панель настроек Speed
-local speedPanel = Instance.new("Frame")
-speedPanel.LayoutOrder = 100
-speedPanel.Size = UDim2.new(1, 0, 0, 0)
-speedPanel.AutomaticSize = Enum.AutomaticSize.None
-speedPanel.BackgroundColor3 = Color3.fromRGB(26, 26, 36)
-speedPanel.ClipsDescendants = true
-speedPanel.Visible = false
-Instance.new("UICorner", speedPanel).CornerRadius = UDim.new(0, 8)
-
-local function toggleSpeedPanel()
-    speedPanel.Visible = not speedPanel.Visible
-    speedPanel.Size = UDim2.new(1, 0, 0, speedPanel.Visible and 74 or 0)
+local function makePanel(order, height)
+    local p = Instance.new("Frame")
+    p.LayoutOrder = order
+    p.Size = UDim2.new(1, 0, 0, 0)
+    p.BackgroundColor3 = PANEL
+    p.ClipsDescendants = true
+    p.Visible = false
+    p.Parent = main
+    Instance.new("UICorner", p).CornerRadius = UDim.new(0, 8)
+    local function toggle()
+        p.Visible = not p.Visible
+        p.Size = UDim2.new(1, 0, 0, p.Visible and height or 0)
+    end
+    return p, toggle
 end
 
-makeRow(2, "airstuck", "Airstuck")
-makeRow(3, "esp3d", "ESP 3D")
-makeRow(4, "esphp", "ESP HP")
-makeRow(5, "espname", "ESP Name")
-local speedRow = makeRow(6, "speed", "Speed", toggleSpeedPanel)
-speedPanel.LayoutOrder = 7
-speedPanel.Parent = main
+local function makeSlider(parent, y, text, minV, maxV, decimals, default, onChange, withDefault)
+    local fmt = "%." .. decimals .. "f"
+    local label = Instance.new("TextLabel")
+    label.BackgroundTransparency = 1
+    label.Position = UDim2.fromOffset(12, y)
+    label.Size = UDim2.new(0.6, 0, 0, 18)
+    label.TextXAlignment = Enum.TextXAlignment.Left
+    label.TextColor3 = Color3.new(1, 1, 1)
+    label.Font = Enum.Font.Gotham
+    label.TextSize = 13
+    label.Parent = parent
 
-local valueLabel = Instance.new("TextLabel")
-valueLabel.BackgroundTransparency = 1
-valueLabel.Position = UDim2.fromOffset(12, 6)
-valueLabel.Size = UDim2.new(0.5, 0, 0, 20)
-valueLabel.Text = "Скорость: 16"
-valueLabel.TextXAlignment = Enum.TextXAlignment.Left
-valueLabel.TextColor3 = Color3.new(1, 1, 1)
-valueLabel.Font = Enum.Font.Gotham
-valueLabel.TextSize = 13
-valueLabel.Parent = speedPanel
+    local track = Instance.new("Frame")
+    track.Position = UDim2.new(0, 12, 0, y + 26)
+    track.Size = UDim2.new(1, -24, 0, 8)
+    track.BackgroundColor3 = OFF
+    track.Parent = parent
+    Instance.new("UICorner", track).CornerRadius = UDim.new(1, 0)
 
-local defaultBtn = Instance.new("TextButton")
-defaultBtn.AnchorPoint = Vector2.new(1, 0)
-defaultBtn.Position = UDim2.new(1, -10, 0, 6)
-defaultBtn.Size = UDim2.fromOffset(70, 22)
-defaultBtn.BackgroundColor3 = ACCENT
-defaultBtn.Text = "Default"
-defaultBtn.TextColor3 = Color3.new(1, 1, 1)
-defaultBtn.Font = Enum.Font.GothamBold
-defaultBtn.TextSize = 12
-defaultBtn.Parent = speedPanel
-Instance.new("UICorner", defaultBtn).CornerRadius = UDim.new(0, 6)
+    local fill = Instance.new("Frame")
+    fill.BackgroundColor3 = ACCENT
+    fill.Size = UDim2.new(0, 0, 1, 0)
+    fill.Parent = track
+    Instance.new("UICorner", fill).CornerRadius = UDim.new(1, 0)
 
-local track = Instance.new("Frame")
-track.Position = UDim2.new(0, 12, 0, 48)
-track.Size = UDim2.new(1, -24, 0, 8)
-track.BackgroundColor3 = OFF
-track.Parent = speedPanel
-Instance.new("UICorner", track).CornerRadius = UDim.new(1, 0)
+    local knob = Instance.new("Frame")
+    knob.AnchorPoint = Vector2.new(0.5, 0.5)
+    knob.Size = UDim2.fromOffset(16, 16)
+    knob.BackgroundColor3 = Color3.new(1, 1, 1)
+    knob.Parent = track
+    Instance.new("UICorner", knob).CornerRadius = UDim.new(1, 0)
 
-local fill = Instance.new("Frame")
-fill.Size = UDim2.new(0, 0, 1, 0)
-fill.BackgroundColor3 = ACCENT
-fill.Parent = track
-Instance.new("UICorner", fill).CornerRadius = UDim.new(1, 0)
+    local function set(v)
+        local m = 10 ^ decimals
+        v = math.clamp(math.floor(v * m + 0.5) / m, minV, maxV)
+        local a = (v - minV) / (maxV - minV)
+        fill.Size = UDim2.new(a, 0, 1, 0)
+        knob.Position = UDim2.new(a, 0, 0.5, 0)
+        label.Text = text .. ": " .. string.format(fmt, v)
+        onChange(v)
+    end
+    set(default)
 
-local knob = Instance.new("Frame")
-knob.AnchorPoint = Vector2.new(0.5, 0.5)
-knob.Position = UDim2.new(0, 0, 0.5, 0)
-knob.Size = UDim2.fromOffset(16, 16)
-knob.BackgroundColor3 = Color3.new(1, 1, 1)
-knob.Parent = track
-Instance.new("UICorner", knob).CornerRadius = UDim.new(1, 0)
+    if withDefault then
+        local b = Instance.new("TextButton")
+        b.AnchorPoint = Vector2.new(1, 0)
+        b.Position = UDim2.new(1, -10, 0, y - 1)
+        b.Size = UDim2.fromOffset(70, 20)
+        b.BackgroundColor3 = ACCENT
+        b.Text = "Default"
+        b.TextColor3 = Color3.new(1, 1, 1)
+        b.Font = Enum.Font.GothamBold
+        b.TextSize = 12
+        b.Parent = parent
+        Instance.new("UICorner", b).CornerRadius = UDim.new(0, 6)
+        b.MouseButton1Click:Connect(function() set(default) end)
+    end
 
-local MINV, MAXV = 16, 50
-local function setSpeed(v)
-    speedValue = math.clamp(math.floor(v + 0.5), MINV, MAXV)
-    local a = (speedValue - MINV) / (MAXV - MINV)
-    fill.Size = UDim2.new(a, 0, 1, 0)
-    knob.Position = UDim2.new(a, 0, 0.5, 0)
-    valueLabel.Text = "Скорость: " .. speedValue
-end
-setSpeed(16)
-
-defaultBtn.MouseButton1Click:Connect(function() setSpeed(16) end)
-
-do
     local sliding = false
     local function update(x)
         local a = math.clamp((x - track.AbsolutePosition.X) / track.AbsoluteSize.X, 0, 1)
-        setSpeed(MINV + a * (MAXV - MINV))
+        set(minV + a * (maxV - minV))
     end
     track.InputBegan:Connect(function(i)
         if i.UserInputType == Enum.UserInputType.MouseButton1 or i.UserInputType == Enum.UserInputType.Touch then
@@ -334,13 +361,57 @@ do
     end)
 end
 
+local function makeToggle(parent, y, text, default, onChange)
+    local b = Instance.new("TextButton")
+    b.Position = UDim2.fromOffset(12, y)
+    b.Size = UDim2.new(1, -24, 0, 24)
+    b.TextColor3 = Color3.new(1, 1, 1)
+    b.Font = Enum.Font.GothamMedium
+    b.TextSize = 13
+    b.AutoButtonColor = false
+    b.Parent = parent
+    Instance.new("UICorner", b).CornerRadius = UDim.new(0, 6)
+    local v = default
+    local function refresh()
+        b.BackgroundColor3 = v and ACCENT or OFF
+        b.Text = text .. ": " .. (v and "ON" or "OFF")
+    end
+    refresh()
+    onChange(v)
+    b.MouseButton1Click:Connect(function()
+        v = not v
+        refresh()
+        onChange(v)
+    end)
+end
+
+-- Строки и панели
+makeRow(2, "airstuck", "Airstuck")
+makeRow(4, "esp3d", "ESP 3D")
+makeRow(6, "esphp", "ESP HP")
+makeRow(8, "espname", "ESP Name")
+
+local speedPanel, speedToggle = makePanel(11, 50)
+makeRow(10, "speed", "Speed", speedToggle)
+makeSlider(speedPanel, 6, "Скорость", 16, 50, 0, 16, function(v) cfg.speed = v end, true)
+
+local trigPanel, trigToggle = makePanel(13, 108)
+makeRow(12, "trigger", "TriggerBot", trigToggle)
+makeToggle(trigPanel, 6, "Crits (только в прыжке)", false, function(v) cfg.crits = v end)
+makeToggle(trigPanel, 36, "Cooldown", true, function(v) cfg.useCooldown = v end)
+makeSlider(trigPanel, 66, "Cooldown (сек)", 0.5, 3, 1, 1, function(v) cfg.cooldown = v end)
+
+local aimPanel, aimToggle = makePanel(15, 102)
+makeRow(14, "aim", "AimAssist", aimToggle)
+makeSlider(aimPanel, 6, "Smooth", 0.1, 5, 1, 1, function(v) cfg.smooth = v end)
+makeSlider(aimPanel, 54, "Range (блоки)", 1, 6, 1, 3, function(v) cfg.range = v end)
+
 ----------------------------------------------------------------
 -- Ввод: RightShift + бинды
 ----------------------------------------------------------------
 UIS.InputBegan:Connect(function(input, processed)
     if input.UserInputType ~= Enum.UserInputType.Keyboard then return end
 
-    -- назначение бинда
     if listeningKey then
         local k = listeningKey
         listeningKey = nil
@@ -350,7 +421,7 @@ UIS.InputBegan:Connect(function(input, processed)
             state[k].bind = input.KeyCode
         end
         ui[k].bindLabel.Text = bindText(k)
-        ui[k].bindLabel.TextColor3 = Color3.fromRGB(150, 150, 170)
+        ui[k].bindLabel.TextColor3 = GREY
         return
     end
 
@@ -361,9 +432,84 @@ UIS.InputBegan:Connect(function(input, processed)
 
     if processed then return end
     for key, s in pairs(state) do
-        if s.bind and s.bind == input.KeyCode then
-            setFeature(key)
+        if s.bind and s.bind == input.KeyCode then setFeature(key) end
+    end
+end)
+
+----------------------------------------------------------------
+-- TriggerBot
+----------------------------------------------------------------
+local function clickMouse()
+    if mouse1click then
+        mouse1click()
+    else
+        local loc = UIS:GetMouseLocation()
+        VIM:SendMouseButtonEvent(loc.X, loc.Y, 0, true, game, 0)
+        VIM:SendMouseButtonEvent(loc.X, loc.Y, 0, false, game, 0)
+    end
+end
+
+local rayParams = RaycastParams.new()
+rayParams.FilterType = Enum.RaycastFilterType.Exclude
+local lastHit = 0
+
+RunService.RenderStepped:Connect(function()
+    if not state.trigger.on or main.Visible then return end
+    local char, hum = getChar(), getHum()
+    if not (char and hum and hum.Health > 0) then return end
+
+    rayParams.FilterDescendantsInstances = { char }
+    local loc = UIS:GetMouseLocation()
+    local ray = cam:ViewportPointToRay(loc.X, loc.Y)
+    local res = workspace:Raycast(ray.Origin, ray.Direction * TRIG_RANGE, rayParams)
+    if not res then return end
+
+    local model = res.Instance:FindFirstAncestorOfClass("Model")
+    local plr = model and Players:GetPlayerFromCharacter(model)
+    local thum = model and model:FindFirstChildOfClass("Humanoid")
+    if not (plr and thum and thum.Health > 0) then return end
+
+    if cfg.crits and hum.FloorMaterial ~= Enum.Material.Air then return end
+
+    local now = os.clock()
+    local interval = cfg.useCooldown and cfg.cooldown or 0.05
+    if now - lastHit >= interval then
+        lastHit = now
+        clickMouse()
+    end
+end)
+
+----------------------------------------------------------------
+-- AimAssist
+----------------------------------------------------------------
+RunService:BindToRenderStep("StarfexAim", Enum.RenderPriority.Camera.Value + 1, function(dt)
+    if not state.aim.on then return end
+    local hrp = getHRP()
+    if not hrp then return end
+    cam = workspace.CurrentCamera
+
+    local maxDist = cfg.range * BLOCK
+    local vp = cam.ViewportSize
+    local center = Vector2.new(vp.X / 2, vp.Y / 2)
+    local bestPos, bestD = nil, math.huge
+
+    for _, plr in ipairs(Players:GetPlayers()) do
+        if plr ~= lp and plr.Character then
+            local thum = plr.Character:FindFirstChildOfClass("Humanoid")
+            local part = plr.Character:FindFirstChild("Head") or plr.Character:FindFirstChild("HumanoidRootPart")
+            if thum and thum.Health > 0 and part and (part.Position - hrp.Position).Magnitude <= maxDist then
+                local v = cam:WorldToViewportPoint(part.Position)
+                if v.Z > 0 then
+                    local d = (Vector2.new(v.X, v.Y) - center).Magnitude
+                    if d < bestD then bestD, bestPos = d, part.Position end
+                end
+            end
         end
+    end
+
+    if bestPos then
+        local alpha = math.clamp(dt * 10 / cfg.smooth, 0, 1)
+        cam.CFrame = cam.CFrame:Lerp(CFrame.lookAt(cam.CFrame.Position, bestPos), alpha)
     end
 end)
 
@@ -411,7 +557,6 @@ for _, p in ipairs(Players:GetPlayers()) do if p ~= lp then createESP(p) end end
 Players.PlayerAdded:Connect(function(p) if p ~= lp then createESP(p) end end)
 Players.PlayerRemoving:Connect(removeESP)
 
--- пары углов для рёбер куба
 local edges = {}
 for i = 0, 7 do
     for _, bit in ipairs({ 1, 2, 4 }) do
@@ -440,7 +585,7 @@ RunService.RenderStepped:Connect(function()
                 local y = (bit32.band(i, 2) ~= 0) and 1 or -1
                 local z = (bit32.band(i, 4) ~= 0) and 1 or -1
                 local world = cf * CFrame.new(x * size.X / 2, y * size.Y / 2, z * size.Z / 2)
-                local v, vis = cam:WorldToViewportPoint(world.Position)
+                local v = cam:WorldToViewportPoint(world.Position)
                 if v.Z <= 0 then ok = false break end
                 pts[i + 1] = Vector2.new(v.X, v.Y)
                 minX, minY = math.min(minX, v.X), math.min(minY, v.Y)
@@ -450,7 +595,6 @@ RunService.RenderStepped:Connect(function()
             if not ok then
                 hideESP(o)
             else
-                -- 3D бокс
                 for i, e in ipairs(edges) do
                     local l = o.box[i]
                     if state.esp3d.on then
@@ -460,7 +604,6 @@ RunService.RenderStepped:Connect(function()
                     end
                 end
 
-                -- HP полоска слева
                 if state.esphp.on then
                     local frac = math.clamp(hum.Health / math.max(hum.MaxHealth, 1), 0, 1)
                     local x = minX - 6
@@ -475,7 +618,6 @@ RunService.RenderStepped:Connect(function()
                     o.hpBg.Visible, o.hp.Visible = false, false
                 end
 
-                -- Имя сверху
                 if state.espname.on then
                     o.name.Text = plr.Name
                     o.name.Position = Vector2.new((minX + maxX) / 2, minY - 18)
