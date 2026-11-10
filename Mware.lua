@@ -58,6 +58,9 @@ local state = {
     criticals = { on = false, bind = nil },
     aura     = { on = false, bind = nil },
     surround = { on = false, bind = nil },
+    keybind  = { on = false, bind = nil },
+    targetesp = { on = false, bind = nil },
+    targetstrafe = { on = false, bind = nil },
 }
 local cfg = {
     speed = 16,
@@ -69,6 +72,19 @@ local cfg = {
     range = 3,
     focus = false,
     hitVolume = 3,
+    critJump = 1,        -- Criticals: множитель силы прыжка
+    auraCooldown = 1.6,  -- AttackAura: скорость атаки (как в Minecraft, ударов/сек)
+    auraBlock = false,   -- бить через блоки
+    auraRange = 3,       -- дальность в блоках
+    auraFree = false,    -- свободное движение/камера
+    auraTarget = false,  -- бежать к цели и кружить
+    auraCrits = false,   -- бить только в прыжке
+    kbOnlyOn = false,    -- Keybinds: только включённые
+    tgMarker = true,     -- TargetESP: куб с острыми углами
+    tgMarker2 = false,   -- TargetESP: куб со скруглёнными углами
+    tgOnlyAura = false,  -- TargetESP: только при включённой AttackAura
+    strafeSpeed = 10,    -- TargetStrafe: скорость
+    strafeRange = 4,     -- TargetStrafe: радиус (стады)
 }
 local ui = {}
 
@@ -151,6 +167,7 @@ RunService:BindToRenderStep("ManewarePin", Enum.RenderPriority.Last.Value, pin)
 ----------------------------------------------------------------
 -- Переключение
 ----------------------------------------------------------------
+local hooks = {}
 local function setFeature(key, value)
     local s = state[key]
     if value == nil then value = not s.on end
@@ -160,6 +177,7 @@ local function setFeature(key, value)
     s.on = value
     if ui[key] then ui[key].set(value) end
     if pins[key] then pins[key].refresh() end
+    if hooks[key] then hooks[key](value) end
 end
 
 bind(lp.CharacterAdded, function()
@@ -407,6 +425,8 @@ end
 local PIN_NAMES = {
     airstuck = "AS", esp3d = "3D", esphp = "HP", espname = "NM",
     speed = "SPD", trigger = "TRG", aim = "AIM", hitsound = "HIT",
+    criticals = "CRT", aura = "AUR", surround = "SUR",
+    keybind = "KEY", targetesp = "TES", targetstrafe = "STR",
 }
 
 local function makeDragButton(text, onTap)
@@ -726,6 +746,7 @@ end
 local pageCombat = makeTab("Combat")
 local pageVisuals = makeTab("Visuals")
 local pageMove = makeTab("Movement")
+local pageMisc = makeTab("Misc")
 
 makeFeature(pageCombat, "trigger", "TriggerBot", "Бьёт, когда игрок под прицелом", function(s)
     makeToggle(s, "Crits (только в прыжке)", false, function(v) cfg.crits = v end)
@@ -737,6 +758,21 @@ makeFeature(pageCombat, "aim", "AimAssist", "Наведение на ближа�
     makeSlider(s, "Smooth", 0.1, 5, 1, 1, function(v) cfg.smooth = v end)
     makeSlider(s, "Range (блоки)", 1, 6, 1, 3, function(v) cfg.range = v end)
 end)
+makeFeature(pageCombat, "criticals", "Criticals", "Криты и сила прыжка", function(s)
+    makeSlider(s, "Jump", 0.1, 2, 1, 1, function(v) cfg.critJump = v end, true)
+end)
+makeFeature(pageCombat, "aura", "AttackAura", "Авто-атака ближайшего игрока", function(s)
+    makeSlider(s, "Cooldown (MC)", 0.1, 5, 1, 1.6, function(v) cfg.auraCooldown = v end)
+    makeToggle(s, "Attack Block (бить через блоки)", false, function(v) cfg.auraBlock = v end)
+    makeSlider(s, "Range (блоки)", 1, 6, 1, 3, function(v) cfg.auraRange = v end)
+    makeToggle(s, "Free (двигаться свободно)", false, function(v) cfg.auraFree = v end)
+    makeToggle(s, "Target (бежать к цели, кружить)", false, function(v) cfg.auraTarget = v end)
+    makeToggle(s, "Crits (только в прыжке)", false, function(v) cfg.auraCrits = v end)
+end)
+makeFeature(pageCombat, "targetstrafe", "TargetStrafe", "Кружит возле цели (только с AttackAura)", function(s)
+    makeSlider(s, "Speed", 1, 40, 0, 10, function(v) cfg.strafeSpeed = v end)
+    makeSlider(s, "Range (стады)", 1, 10, 1, 4, function(v) cfg.strafeRange = v end)
+end)
 makeFeature(pageCombat, "hitsound", "HitSound", "Звук skeet при ударе по игроку", function(s)
     makeSlider(s, "Громкость", 0.5, 10, 1, 3, function(v) cfg.hitVolume = v end)
 end)
@@ -745,11 +781,22 @@ makeFeature(pageVisuals, "esp3d", "ESP 3D", "3D бокс вокруг игрок
 makeFeature(pageVisuals, "esphp", "ESP HP", "Полоска здоровья слева от бокса")
 makeFeature(pageVisuals, "espname", "ESP Name", "Имя над боксом")
 
+makeFeature(pageVisuals, "keybind", "Keybinds", "Список биндов на экране", function(s)
+    makeToggle(s, "Only enabled (только включённые)", false, function(v) cfg.kbOnlyOn = v end)
+end)
+makeFeature(pageVisuals, "targetesp", "TargetESP", "Куб над целью", function(s)
+    makeToggle(s, "Marker (острые углы)", true, function(v) cfg.tgMarker = v end)
+    makeToggle(s, "Marker-2 (скруглённые)", false, function(v) cfg.tgMarker2 = v end)
+    makeToggle(s, "Only AttackAura", false, function(v) cfg.tgOnlyAura = v end)
+end)
+
 makeFeature(pageMove, "airstuck", "Airstuck", "Заморозка в воздухе или на земле")
 makeFeature(pageMove, "speed", "Speed", "Ускорение движения", function(s)
     makeCycle(s, "Режим", { "CFrame", "Velocity", "WalkSpeed" }, "CFrame", function(v) cfg.speedMode = v end)
     makeSlider(s, "Скорость", 16, 50, 0, 16, function(v) cfg.speed = v end, true)
 end)
+
+makeFeature(pageMisc, "surround", "Surround", "Запирает тебя в блоках (1 блок внутри)")
 
 showTab("Combat")
 
@@ -1113,6 +1160,489 @@ bind(RunService.Heartbeat, function()
 end)
 
 ----------------------------------------------------------------
+-- Criticals / AttackAura / Surround
+----------------------------------------------------------------
+local GuiService = game:GetService("GuiService")
+
+local function isAir(hum)
+    local st = hum:GetState()
+    return hum.FloorMaterial == Enum.Material.Air
+        or st == Enum.HumanoidStateType.Freefall or st == Enum.HumanoidStateType.Jumping
+end
+
+-- Criticals: множитель прыжка + мини-прыжок перед ударом (крит с земли)
+local jumpBase = nil
+local function restoreJump()
+    local hum = getHum()
+    if jumpBase and hum then
+        pcall(function() hum.JumpPower = jumpBase.jp end)
+        pcall(function() hum.JumpHeight = jumpBase.jh end)
+    end
+    jumpBase = nil
+end
+hooks.criticals = function(on)
+    if on then jumpBase = nil else restoreJump() end
+end
+bind(RunService.Heartbeat, function()
+    if not state.criticals.on or state.airstuck.on then return end
+    local hum = getHum()
+    if not hum then return end
+    if not jumpBase then jumpBase = { jp = hum.JumpPower, jh = hum.JumpHeight } end
+    hum.JumpPower = jumpBase.jp * cfg.critJump
+    hum.JumpHeight = jumpBase.jh * cfg.critJump ^ 2 -- высота растёт от квадрата силы
+end)
+
+local function critHop()
+    local root = getRoot()
+    if not root then return end
+    local v = root.AssemblyLinearVelocity
+    root.AssemblyLinearVelocity = Vector3.new(v.X, math.clamp(9 * cfg.critJump, 2, 40), v.Z)
+end
+
+-- AttackAura
+local auraBusy, lastAura = false, 0
+local auraCurrent = nil
+local aimOverride, aimUntil = nil, 0
+
+local function findTarget(maxDist)
+    local root = getRoot()
+    if not root then return nil end
+    local best, bestRoot, bestD
+    for _, plr in ipairs(Players:GetPlayers()) do
+        local ch = plr ~= lp and plr.Character
+        local th = ch and ch:FindFirstChildOfClass("Humanoid")
+        local tr = th and th.Health > 0 and (th.RootPart or ch:FindFirstChild("HumanoidRootPart"))
+        if tr then
+            local d = (tr.Position - root.Position).Magnitude
+            if d <= maxDist and (not bestD or d < bestD) then
+                best, bestRoot, bestD = ch, tr, d
+            end
+        end
+    end
+    return best, bestRoot, bestD
+end
+
+-- части карты между камерой и целью (то, что "ловит" клик)
+local function obstructions(ch, aimPos)
+    local origin = getCam().CFrame.Position
+    local params = RaycastParams.new()
+    params.FilterType = Enum.RaycastFilterType.Exclude
+    local filter = { lp.Character }
+    params.FilterDescendantsInstances = filter
+    local list = {}
+    for _ = 1, 12 do
+        local res = workspace:Raycast(origin, aimPos - origin, params)
+        if not res or res.Instance:IsDescendantOf(ch) then break end
+        list[#list + 1] = res.Instance
+        filter[#filter + 1] = res.Instance
+        params.FilterDescendantsInstances = filter
+    end
+    return list
+end
+
+local function inMenu(loc)
+    if not main.Visible then return false end
+    local p, s = main.AbsolutePosition, main.AbsoluteSize
+    local inset = GuiService:GetGuiInset().Y
+    return loc.X >= p.X and loc.X <= p.X + s.X and loc.Y >= p.Y + inset and loc.Y <= p.Y + s.Y + inset
+end
+
+local function clickAt(loc)
+    if IS_TOUCH then
+        clickMouse()
+        return
+    end
+    lastAttack = os.clock()
+    local old = UIS:GetMouseLocation()
+    VIM:SendMouseMoveEvent(loc.X, loc.Y, game)
+    VIM:SendMouseButtonEvent(loc.X, loc.Y, 0, true, game, 0)
+    task.wait(0.03)
+    VIM:SendMouseButtonEvent(loc.X, loc.Y, 0, false, game, 0)
+    if UIS.MouseBehavior == Enum.MouseBehavior.Default then
+        VIM:SendMouseMoveEvent(old.X, old.Y, game)
+    end
+end
+
+local function doAttack(ch, tr)
+    auraBusy = true
+    local restore = {}
+    pcall(function()
+        local hum = getHum()
+        if not hum then return end
+        -- Criticals включён: прыгаем маленько и бьём в воздухе (крит даже с земли)
+        if state.criticals.on and not isAir(hum) then
+            critHop()
+            task.wait(0.06)
+        end
+        if not (tr and tr.Parent) then return end
+        local aimPos = tr.Position
+        local blockers = obstructions(ch, aimPos)
+        if #blockers > 0 then
+            if not cfg.auraBlock then return end -- за блоком и Attack Block выключен
+            for _, part in ipairs(blockers) do
+                if part.CanQuery then
+                    part.CanQuery = false -- клик/луч игры пролетает сквозь блок
+                    restore[#restore + 1] = part
+                end
+            end
+        end
+        aimOverride, aimUntil = aimPos, os.clock() + 0.2
+        RunService.RenderStepped:Wait()
+        RunService.RenderStepped:Wait()
+        local cam = getCam()
+        local v = cam:WorldToViewportPoint(aimPos)
+        local loc = Vector2.new(v.X, v.Y)
+        if IS_TOUCH then
+            if not main.Visible then clickAt(loc) end
+        elseif not inMenu(loc) then
+            clickAt(loc)
+        end
+        task.wait(0.05)
+    end)
+    for _, part in ipairs(restore) do
+        pcall(function() part.CanQuery = true end)
+    end
+    auraBusy = false
+end
+
+bind(RunService.Heartbeat, function()
+    if not state.aura.on or auraBusy or state.airstuck.on then return end
+    local hum, root = getHum(), getRoot()
+    if not (hum and root and hum.Health > 0) then return end
+    if os.clock() - lastAura < 1 / cfg.auraCooldown then return end
+    local ch, tr = findTarget(cfg.auraRange * BLOCK)
+    if not ch then return end
+    -- Crits: только в воздухе (или с Criticals - тогда сам подпрыгнет)
+    if cfg.auraCrits and not isAir(hum) and not state.criticals.on then return end
+    lastAura = os.clock()
+    task.spawn(doAttack, ch, tr)
+end)
+
+-- наведение камеры + Target (бег к цели и кружение)
+RunService:BindToRenderStep("ManewareAura", Enum.RenderPriority.Last.Value, function()
+    auraCurrent = nil
+    if not state.aura.on or state.airstuck.on then return end
+    local hum, root = getHum(), getRoot()
+    if not (hum and root and hum.Health > 0) then return end
+    local cam = getCam()
+    local reach = cfg.auraRange * BLOCK
+    local pursue = cfg.auraTarget and not cfg.auraFree and not state.targetstrafe.on
+    local ch, tr, dist = findTarget(pursue and 120 or reach)
+    auraCurrent = ch
+
+    local look
+    if aimOverride and os.clock() < aimUntil then
+        look = aimOverride            -- момент удара (работает и в Free)
+    elseif ch and not cfg.auraFree then
+        look = tr.Position            -- не Free: камера держит цель
+    end
+    if look then cam.CFrame = CFrame.lookAt(cam.CFrame.Position, look) end
+
+    if pursue and ch then
+        local tp = tr.Position
+        local rel = Vector3.new(root.Position.X - tp.X, 0, root.Position.Z - tp.Z)
+        local radius = math.clamp(reach * 0.3, 2.5, 5) -- прижимаемся вплотную
+        local mv
+        if rel.Magnitude > radius + 3 then
+            mv = -rel                                   -- далеко: бежим прямо
+        else
+            local ang = math.atan2(rel.Z, rel.X) + 0.6  -- кружим вокруг цели
+            local goal = Vector3.new(tp.X + math.cos(ang) * radius, 0, tp.Z + math.sin(ang) * radius)
+            mv = goal - Vector3.new(root.Position.X, 0, root.Position.Z)
+        end
+        if mv.Magnitude > 0.3 then hum:Move(mv.Unit, false) end
+        -- Crits без Criticals: сами прыгаем, чтобы бить в воздухе
+        if cfg.auraCrits and not state.criticals.on and dist <= reach + 2 and not isAir(hum) then
+            hum.Jump = true
+        end
+    end
+end)
+
+-- Surround: коробка из блоков вокруг игрока (внутри 1 блок), снизу вверх, затем крыша
+local surroundParts, surroundToken = {}, 0
+
+-- ЗАМЕНИ эту функцию, если в игре есть свой способ ставить блоки (remote и т.п.).
+-- По умолчанию блок создаётся локально (виден и твёрдый только для тебя).
+local function placeBlock(cf)
+    local b = Instance.new("Part")
+    b.Name = "ManewareBlock"
+    b.Size = Vector3.new(BLOCK, BLOCK, BLOCK)
+    b.CFrame = cf
+    b.Anchored = true
+    b.CanCollide = true
+    b.Material = Enum.Material.SmoothPlastic
+    b.Color = ACCENT
+    b.Transparency = 0.35
+    b.Parent = workspace
+    surroundParts[#surroundParts + 1] = b
+    return b
+end
+
+local function clearSurround()
+    surroundToken = surroundToken + 1
+    for _, b in ipairs(surroundParts) do pcall(function() b:Destroy() end) end
+    table.clear(surroundParts)
+end
+
+local function buildSurround()
+    local root, hum = getRoot(), getHum()
+    if not (root and hum) then
+        notify("Surround: персонаж не найден")
+        setFeature("surround", false)
+        return
+    end
+    clearSurround()
+    local my = surroundToken
+    local cx, cz = root.Position.X, root.Position.Z
+
+    local params = RaycastParams.new()
+    params.FilterType = Enum.RaycastFilterType.Exclude
+    params.FilterDescendantsInstances = { lp.Character }
+    local down = workspace:Raycast(root.Position, Vector3.new(0, -30, 0), params)
+    local feetY = down and down.Position.Y or (root.Position.Y - hum.HipHeight - root.Size.Y / 2)
+
+    local ring = {}
+    for dx = -1, 1 do
+        for dz = -1, 1 do
+            if not (dx == 0 and dz == 0) then ring[#ring + 1] = { dx, dz } end
+        end
+    end
+
+    local function put(dx, dz, layer)
+        if surroundToken ~= my then return false end
+        placeBlock(CFrame.new(cx + dx * BLOCK, feetY + BLOCK * (layer + 0.5), cz + dz * BLOCK))
+        task.wait(0.05)
+        return true
+    end
+
+    for layer = 0, 2 do                         -- низ, середина, верх
+        for _, c in ipairs(ring) do
+            if not put(c[1], c[2], layer) then return end
+        end
+    end
+    for dx = -1, 1 do                           -- крыша 3x3
+        for dz = -1, 1 do
+            if not put(dx, dz, 3) then return end
+        end
+    end
+    notify("Surround: готово")
+end
+
+hooks.surround = function(on)
+    if on then task.spawn(buildSurround) else clearSurround() end
+end
+
+bind(lp.CharacterAdded, function()
+    jumpBase = nil
+    if state.surround.on then setFeature("surround", false) end
+end)
+
+----------------------------------------------------------------
+-- TargetStrafe: кружение вокруг цели AttackAura
+----------------------------------------------------------------
+bind(RunService.Heartbeat, function()
+    if not (state.targetstrafe.on and state.aura.on) or state.airstuck.on then return end
+    local hum, root = getHum(), getRoot()
+    if not (hum and root and hum.Health > 0) then return end
+    local ch, tr = findTarget(60)
+    if not ch then return end
+    local radius = cfg.strafeRange
+    local tp, rp = tr.Position, root.Position
+    local rel = Vector3.new(rp.X - tp.X, 0, rp.Z - tp.Z)
+    local ang = rel.Magnitude > 0.01 and math.atan2(rel.Z, rel.X) or 0
+    local lead = math.clamp(cfg.strafeSpeed * 0.1 / radius, 0.12, 1.2) -- на сколько опережаем по кругу
+    local goal = Vector3.new(tp.X + math.cos(ang + lead) * radius, 0, tp.Z + math.sin(ang + lead) * radius)
+    local mv = goal - Vector3.new(rp.X, 0, rp.Z)
+    if mv.Magnitude > 0.05 then
+        local d = mv.Unit
+        local v = root.AssemblyLinearVelocity
+        root.AssemblyLinearVelocity = Vector3.new(d.X * cfg.strafeSpeed, v.Y, d.Z * cfg.strafeSpeed)
+    end
+end)
+
+----------------------------------------------------------------
+-- Keybinds: список биндов на экране
+----------------------------------------------------------------
+local KB_ORDER = {
+    "airstuck", "esp3d", "esphp", "espname", "speed", "trigger", "aim", "hitsound",
+    "criticals", "aura", "targetstrafe", "targetesp", "surround",
+}
+local KB_NAMES = {
+    airstuck = "airstuck", esp3d = "esp 3d", esphp = "esp hp", espname = "esp name", speed = "speed",
+    trigger = "triggerbot", aim = "aimassist", hitsound = "hitsound", criticals = "criticals",
+    aura = "attackaura", targetstrafe = "targetstrafe", targetesp = "targetesp", surround = "surround",
+}
+
+local kbFrame = Instance.new("Frame")
+kbFrame.Name = "Keybinds"
+kbFrame.Position = UDim2.new(0, 14, 0.4, 0)
+kbFrame.AutomaticSize = Enum.AutomaticSize.XY
+kbFrame.Size = UDim2.fromOffset(0, 0)
+kbFrame.BackgroundColor3 = C.bg
+kbFrame.BackgroundTransparency = 0.2
+kbFrame.BorderSizePixel = 0
+kbFrame.Visible = false
+kbFrame.Parent = gui
+corner(kbFrame, 8)
+do
+    local st = Instance.new("UIStroke", kbFrame)
+    st.Color = C.line
+    st.Thickness = 1
+    local pad = Instance.new("UIPadding", kbFrame)
+    pad.PaddingLeft, pad.PaddingRight = UDim.new(0, 10), UDim.new(0, 10)
+    pad.PaddingTop, pad.PaddingBottom = UDim.new(0, 8), UDim.new(0, 8)
+end
+local kbLabel = Instance.new("TextLabel")
+kbLabel.BackgroundTransparency = 1
+kbLabel.AutomaticSize = Enum.AutomaticSize.XY
+kbLabel.Size = UDim2.fromOffset(0, 0)
+kbLabel.RichText = true
+kbLabel.Font = Enum.Font.GothamMedium
+kbLabel.TextSize = 13
+kbLabel.TextColor3 = C.text
+kbLabel.TextXAlignment = Enum.TextXAlignment.Left
+kbLabel.TextYAlignment = Enum.TextYAlignment.Top
+kbLabel.Text = ""
+kbLabel.Parent = kbFrame
+
+local kbLast, kbText = 0, ""
+bind(RunService.Heartbeat, function()
+    if not state.keybind.on then
+        kbFrame.Visible = false
+        return
+    end
+    if os.clock() - kbLast < 0.1 then return end
+    kbLast = os.clock()
+    local lines = {}
+    for _, k in ipairs(KB_ORDER) do
+        local s = state[k]
+        if s and s.bind and (s.on or not cfg.kbOnlyOn) then
+            local tag = s.on and '<font color="#00d27a">on</font>' or '<font color="#7583a3">off</font>'
+            lines[#lines + 1] = string.format("%s [%s] %s", KB_NAMES[k] or k, s.bind.Name:lower(), tag)
+        end
+    end
+    local text = table.concat(lines, "\n")
+    if text ~= kbText then
+        kbText = text
+        kbLabel.Text = text
+    end
+    kbFrame.Visible = #lines > 0
+end)
+
+----------------------------------------------------------------
+-- TargetESP: вращающийся куб-маркер над целью (Drawing)
+----------------------------------------------------------------
+local MARK_LINES = 120
+local markLines = {}
+for i = 1, MARK_LINES do markLines[i] = newLine(1.5, ACCENT) end
+
+local function hideMarker()
+    for i = 1, MARK_LINES do markLines[i].Visible = false end
+end
+
+local function crosshairTarget()
+    local cam = getCam()
+    local loc = IS_TOUCH and (cam.ViewportSize / 2) or UIS:GetMouseLocation()
+    local ray = cam:ViewportPointToRay(loc.X, loc.Y)
+    local dir = ray.Direction.Unit
+    local best, bestT
+    for _, plr in ipairs(Players:GetPlayers()) do
+        local ch = plr ~= lp and plr.Character
+        local th = ch and ch:FindFirstChildOfClass("Humanoid")
+        if th and th.Health > 0 then
+            local cf, size = ch:GetBoundingBox()
+            local t = rayBox(ray.Origin, dir, cf, size)
+            if t and (not bestT or t < bestT) then best, bestT = ch, t end
+        end
+    end
+    return best
+end
+
+local SIGNS = {}
+for i = 0, 7 do
+    SIGNS[i + 1] = {
+        (bit32.band(i, 1) ~= 0) and 1 or -1,
+        (bit32.band(i, 2) ~= 0) and 1 or -1,
+        (bit32.band(i, 4) ~= 0) and 1 or -1,
+    }
+end
+
+bind(RunService.RenderStepped, function()
+    if not state.targetesp.on or not (cfg.tgMarker or cfg.tgMarker2) then
+        hideMarker()
+        return
+    end
+    local ch
+    if cfg.tgOnlyAura then
+        ch = state.aura.on and auraCurrent or nil
+    else
+        ch = (state.aura.on and auraCurrent) or crosshairTarget()
+    end
+    local th = ch and ch:FindFirstChildOfClass("Humanoid")
+    if not (th and th.Health > 0) then
+        hideMarker()
+        return
+    end
+
+    local cam = getCam()
+    local cf, size = ch:GetBoundingBox()
+    local center = cf.Position + Vector3.new(0, size.Y / 2 + 1.8, 0) -- выше тела
+    local h = 0.9
+    local th_ = -os.clock() * 0.9 -- медленно крутится вправо
+    local c, sn = math.cos(th_), math.sin(th_)
+
+    local function corner3(i)
+        local g = SIGNS[i]
+        local x, y, z = g[1] * h, g[2] * h, g[3] * h
+        return Vector3.new(x * c + z * sn, y, -x * sn + z * c)
+    end
+
+    local n = 0
+    local function seg(a, b)
+        n = n + 1
+        local l = markLines[n]
+        if not l then return end
+        local va, vb = cam:WorldToViewportPoint(center + a), cam:WorldToViewportPoint(center + b)
+        if va.Z <= 0 or vb.Z <= 0 then
+            l.Visible = false
+        else
+            l.From, l.To, l.Visible = Vector2.new(va.X, va.Y), Vector2.new(vb.X, vb.Y), true
+        end
+    end
+
+    local rounded = cfg.tgMarker2
+    local LEN, R = 0.35, 0.18 -- длина уголка и радиус скругления (доли ребра)
+    for i = 1, 8 do
+        local v = corner3(i)
+        local es = {}
+        for k = 1, 3 do
+            local sg = { SIGNS[i][1], SIGNS[i][2], SIGNS[i][3] }
+            sg[k] = -sg[k]
+            local g = { sg[1] * h, sg[2] * h, sg[3] * h }
+            local nv = Vector3.new(g[1] * c + g[3] * sn, g[2], -g[1] * sn + g[3] * c)
+            es[k] = nv - v
+        end
+        for k = 1, 3 do
+            seg(v + es[k] * (rounded and R or 0), v + es[k] * LEN)
+        end
+        if rounded then
+            local pairsIdx = { { 1, 2 }, { 1, 3 }, { 2, 3 } }
+            for _, pr in ipairs(pairsIdx) do
+                local A, B = v + es[pr[1]] * R, v + es[pr[2]] * R
+                local prev = A
+                for st = 1, 4 do
+                    local t = st / 4
+                    local pt = A * (1 - t) ^ 2 + v * (2 * (1 - t) * t) + B * (t * t)
+                    seg(prev, pt)
+                    prev = pt
+                end
+            end
+        end
+    end
+    for i = n + 1, MARK_LINES do markLines[i].Visible = false end
+end)
+
+----------------------------------------------------------------
 -- Выгрузка (вызывается при повторном запуске скрипта)
 ----------------------------------------------------------------
 env.ManewareUnload = function()
@@ -1120,6 +1650,11 @@ env.ManewareUnload = function()
     for _, c in ipairs(conns) do pcall(function() c:Disconnect() end) end
     pcall(function() RunService:UnbindFromRenderStep("ManewareAim") end)
     pcall(function() RunService:UnbindFromRenderStep("ManewarePin") end)
+    pcall(function() RunService:UnbindFromRenderStep("ManewareAura") end)
+    pcall(restoreJump)
+    for _, l in ipairs(markLines) do pcall(function() l:Remove() end) end
+    pcall(function() kbFrame:Destroy() end)
+    pcall(clearSurround)
     for plr in pairs(esp) do pcall(removeESP, plr) end
     pcall(function() gui:Destroy() end)
     pcall(function() hitSound:Destroy() end)
