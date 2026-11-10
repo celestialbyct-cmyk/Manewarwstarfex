@@ -1,4 +1,4 @@
---// Starfex Hub v3 | RightShift - открыть/закрыть меню
+--// Maneware Hub v3 | RightShift - открыть/закрыть меню
 --// ЛКМ по функции - вкл/выкл | ПКМ - настройки | СКМ (колёсико) - назначить бинд
 
 local Players = game:GetService("Players")
@@ -11,9 +11,11 @@ local lp = Players.LocalPlayer
 local env = (getgenv and getgenv()) or _G
 
 -- выгрузка предыдущей версии (чтобы старые циклы не мешали)
-if env.StarfexUnload then pcall(env.StarfexUnload) end
+if env.ManewareUnload then pcall(env.ManewareUnload) end
+if env.StarfexUnload then pcall(env.StarfexUnload) end -- старое название клиента
 
 local parentGui = (gethui and gethui()) or game:GetService("CoreGui")
+if parentGui:FindFirstChild("ManewareHub") then parentGui.ManewareHub:Destroy() end
 if parentGui:FindFirstChild("StarfexHub") then parentGui.StarfexHub:Destroy() end
 
 local conns = {}
@@ -53,6 +55,9 @@ local state = {
     trigger  = { on = false, bind = nil },
     aim      = { on = false, bind = nil },
     hitsound = { on = false, bind = nil },
+    criticals = { on = false, bind = nil },
+    aura     = { on = false, bind = nil },
+    surround = { on = false, bind = nil },
 }
 local cfg = {
     speed = 16,
@@ -141,7 +146,7 @@ bind(RunService.Stepped, pin)
 bind(RunService.Heartbeat, pin)
 if RunService.PreSimulation then bind(RunService.PreSimulation, pin) end
 if RunService.PostSimulation then bind(RunService.PostSimulation, pin) end
-RunService:BindToRenderStep("StarfexPin", Enum.RenderPriority.Last.Value, pin)
+RunService:BindToRenderStep("ManewarePin", Enum.RenderPriority.Last.Value, pin)
 
 ----------------------------------------------------------------
 -- Переключение
@@ -239,7 +244,7 @@ local function label(parent, text, size, font, color, x, y, w, h, align)
 end
 
 local gui = Instance.new("ScreenGui")
-gui.Name = "StarfexHub"
+gui.Name = "ManewareHub"
 gui.ResetOnSpawn = false
 gui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
 if syn and syn.protect_gui then pcall(syn.protect_gui, gui) end
@@ -276,7 +281,7 @@ sideFill.BackgroundColor3 = C.side
 sideFill.BorderSizePixel = 0
 sideFill.Parent = side
 
-label(side, "STARFEX", 20, Enum.Font.GothamBlack, ACCENT, 18, 16, 120, 24)
+label(side, "MANEWARE", 20, Enum.Font.GothamBlack, ACCENT, 18, 16, 120, 24)
 label(side, "private hub", 11, Enum.Font.Gotham, C.dim, 18, 40, 120, 14)
 local sline = Instance.new("Frame")
 sline.Position = UDim2.fromOffset(14, 64)
@@ -907,7 +912,7 @@ local function targetPart(plr)
     return ch:FindFirstChild("Head") or th.RootPart or ch:FindFirstChild("HumanoidRootPart")
 end
 
-RunService:BindToRenderStep("StarfexAim", Enum.RenderPriority.Last.Value, function(dt)
+RunService:BindToRenderStep("ManewareAim", Enum.RenderPriority.Last.Value, function(dt)
     if not state.aim.on then
         focusPlr = nil
         return
@@ -1076,7 +1081,7 @@ end)
 -- HitSound: звук, когда у игрока рядом падает HP сразу после твоего клика
 ----------------------------------------------------------------
 local hitSound = Instance.new("Sound")
-hitSound.Name = "StarfexHit"
+hitSound.Name = "ManewareHit"
 hitSound.SoundId = HITSOUND_ID
 hitSound.Parent = game:GetService("SoundService")
 
@@ -1110,11 +1115,11 @@ end)
 ----------------------------------------------------------------
 -- Выгрузка (вызывается при повторном запуске скрипта)
 ----------------------------------------------------------------
-env.StarfexUnload = function()
+env.ManewareUnload = function()
     if state.airstuck.on then pcall(applyAirstuck, false) end
     for _, c in ipairs(conns) do pcall(function() c:Disconnect() end) end
-    pcall(function() RunService:UnbindFromRenderStep("StarfexAim") end)
-    pcall(function() RunService:UnbindFromRenderStep("StarfexPin") end)
+    pcall(function() RunService:UnbindFromRenderStep("ManewareAim") end)
+    pcall(function() RunService:UnbindFromRenderStep("ManewarePin") end)
     for plr in pairs(esp) do pcall(removeESP, plr) end
     pcall(function() gui:Destroy() end)
     pcall(function() hitSound:Destroy() end)
